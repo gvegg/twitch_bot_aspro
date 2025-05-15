@@ -1,0 +1,8 @@
+{
+    "oauth_token": "oauth:6f9ndlz2yla69gthyxb20albftq1we",
+    "client_id": "gp762nuuoqcoxypju8c569th9wz7q5",
+    "channel": "mc_capy",
+    "max_image_size": 4194304000,
+    "allowed_formats": ["jpg", "jpeg", "png", "webp"],
+    "vision_model": "openai-vision"
+}

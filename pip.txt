@@ -1,0 +1,9 @@
+pip install twitchAPI
+pip install twitchio gpt4free requests bs4
+pip install gpt4free openai twitchio
+pip install -U g4f
+
+OAUTH_TOKEN = "oauth:6f9ndlz2yla69gthyxb20albftq1we"
+CLIENT_ID = "gp762nuuoqcoxypju8c569th9wz7q5"
+CHANNEL = "AsproSPB_1337"
+MESSAGE = "Сообщение работает! ✅"
