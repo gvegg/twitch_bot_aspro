@@ -11,6 +11,12 @@ import random
 import base64
 import re
 import aiohttp
+import subprocess
+import io
+import soundfile as sf
+import numpy as np
+from pydub import AudioSegment
+import time
 
 # Настройка логирования
 logging.basicConfig(
@@ -187,6 +193,140 @@ class TextGenerator:
         response = response.strip()
         return response  # Убрано обрезание для обычных моделей
 
+class AudioProcessor:
+    def __init__(self):
+        self.ffmpeg_process = None
+        self.buffer = bytearray()
+        self.sample_rate = 16000
+        self.chunk_size = self.sample_rate * 5  # 5 seconds
+        
+    async def start_stream_capture(self, channel_name):
+        command = [
+            'streamlink',
+            '--twitch-disable-ads',
+            '--twitch-low-latency',
+            f'twitch.tv/uncle_biz',
+            'audio_only',
+            '-O'
+        ]
+        
+        self.ffmpeg_process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+
+    async def read_audio_chunks(self):
+        while True:
+            raw_data = self.ffmpeg_process.stdout.read(4096)
+            if not raw_data:
+                await asyncio.sleep(0.1)
+                continue
+                
+            self.buffer.extend(raw_data)
+            
+            if len(self.buffer) >= self.chunk_size:
+                chunk = self.buffer[:self.chunk_size]
+                self.buffer = self.buffer[self.chunk_size:]
+                yield chunk
+
+class StreamAnalyzer:
+    def __init__(self, bot):
+        self.bot = bot
+        self.audio_processor = AudioProcessor()
+        self.last_response_time = 0
+        self.response_cooldown = 30  # seconds
+
+    async def process_audio_stream(self, channel_name):
+        await self.audio_processor.start_stream_capture(channel_name)
+        
+        async for chunk in self.audio_processor.read_audio_chunks():
+            if time.time() - self.last_response_time < self.response_cooldown:
+                continue
+                
+            transcript = await self.transcribe_audio(chunk)
+            if transcript:
+                response = await self.generate_stream_response(transcript)
+                if response:
+                    await self.send_stream_response(response)
+
+    async def transcribe_audio(self, audio_data):
+        try:
+            # Конвертируем raw audio в формат WAV
+            audio = AudioSegment(
+                audio_data,
+                frame_rate=16000,
+                sample_width=2,
+                channels=1
+            )
+            wav_buffer = io.BytesIO()
+            audio.export(wav_buffer, format="wav")
+            
+            base64_audio = base64.b64encode(wav_buffer.getvalue()).decode('utf-8')
+            
+            payload = {
+                "model": "openai-audio",
+                "messages": [{
+                    "role": "user",
+                    "content": [{
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": base64_audio,
+                            "format": "wav"
+                        }
+                    }]
+                }]
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://text.pollinations.ai/openai",
+                    json=payload,
+                    timeout=30
+                ) as response:
+                    data = await response.json()
+                    return data['choices'][0]['message']['content']
+                    
+        except Exception as e:
+            logger.error(f"Transcription error: {str(e)}")
+            return None
+
+    async def generate_stream_response(self, transcript):
+        try:
+            context = [{
+                "role": "system",
+                "content": f"Ты анализируешь аудио с трансляции. Отреагируй на последнее событие (до 100 символов). Транскрипт: {transcript[:300]}"
+            }]
+            
+            payload = {
+                "model": "openai-large",
+                "messages": context,
+                "max_tokens": 70,
+                "temperature": 0.9
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://text.pollinations.ai/openai",
+                    json=payload,
+                    timeout=20
+                ) as response:
+                    data = await response.json()
+                    return data['choices'][0]['message']['content']
+                    
+        except Exception as e:
+            logger.error(f"Response generation error: {str(e)}")
+            return None
+
+    async def send_stream_response(self, message):
+        try:
+            channel = self.bot.get_channel(self.bot.initial_channels[0])
+            await channel.send(message)
+            self.last_response_time = time.time()
+            logger.info(f"Sent stream response: {message}")
+        except Exception as e:
+            logger.error(f"Error sending message: {str(e)}")
+
 class AIChatBot:
     def __init__(self):
         self.base_context = [{
@@ -296,6 +436,26 @@ class Bot(commands.Bot):
         )
         self.ai = AIChatBot()
         self.request_tasks = {}
+        self.stream_analyzer = StreamAnalyzer(self)  # Добавлено
+        self.stream_monitor_task = None
+
+    async def event_ready(self):
+        logger.info(f"Бот {self.nick} запущен")
+        asyncio.create_task(self.ai.process_requests())
+        # Запуск мониторинга стрима
+        self.stream_monitor_task = asyncio.create_task()
+        self.stream_analyzer.process_audio_stream(API_CONFIG['channel'])
+
+    async def event_stream_online(self):
+        logger.info("Стрим начался!")
+        if self.stream_monitor_task.done():
+            self.stream_monitor_task = asyncio.create_task()
+            self.stream_analyzer.process_audio_stream(API_CONFIG['channel'])
+
+    async def event_stream_offline(self):
+        logger.info("Стрим закончился")
+        if self.stream_monitor_task and not self.stream_monitor_task.done():
+            self.stream_monitor_task.cancel()
 
     async def event_ready(self):
         logger.info(f"Бот {self.nick} запущен")
@@ -336,11 +496,11 @@ class Bot(commands.Bot):
 
     async def handle_help(self, username: str, text: str, message):
         help_text = (
-            "📜 Команды:\n"
-            "!help - помощь\n"
-            "!image [описание] - генерация изображения\n"
-            "!analyze [URL] [вопрос] - анализ изображения\n"
-            "!search [запрос] - поиск информации\n"
+            "Команды: | "
+            "!help - помощь | "
+            "!image [описание] - генерация изображения | "
+            "!analyze [URL] [вопрос] - анализ изображения | "
+            "!search [запрос] - поиск информации | "
             "Любой другой текст после '!' - общение с нейросетью"
         )
         await message.channel.send(f"@{username} {help_text}")

@@ -1,8 +1,16 @@
 {
     "oauth_token": "oauth:6f9ndlz2yla69gthyxb20albftq1we",
     "client_id": "gp762nuuoqcoxypju8c569th9wz7q5",
-    "channel": "mc_capy",
+    "channel": "ski_music_",
     "max_image_size": 4194304000,
     "allowed_formats": ["jpg", "jpeg", "png", "webp"],
-    "vision_model": "openai-vision"
+    "vision_model": "openai-vision",
+    "audio": {
+        "sample_rate": 16000,
+        "channels": 1,
+        "silence_threshold": -40,
+        "min_silence_len": 500,
+        "chunk_duration": 30,
+        "model_size": "base"
+    }
 }

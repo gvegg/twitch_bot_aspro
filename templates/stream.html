@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stream</title>
+    <style>
+        .media-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .media-item {
+            position: absolute;
+            cursor: move;
+            resize: both;
+            overflow: hidden;
+        }
+        
+        .media-item img,
+        .media-item video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <div class="media-container" id="container">
+        {% for file in files %}
+            <div class="media-item" id="{{ file }}" 
+                style="left: {{ positions.get(file, {}).get('x', 0) }}px; 
+                    top: {{ positions.get(file, {}).get('y', 0) }}px;
+                    width: {{ positions.get(file, {}).get('width', 300) }}px;
+                    height: {{ positions.get(file, {}).get('height', 200) }}px;">
+                {% if file.split('.')[-1] in ['mp4', 'mov', 'avi', 'mp4'] %}
+                    <video controls>
+                        <source src="{{ url_for('uploaded_file', filename=file) }}" type="video/{{ file.split('.')[-1] }}">
+                    </video>
+                {% else %}
+                    <img src="{{ url_for('uploaded_file', filename=file)" alt="{{ file }}">
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+
+    <script>
+        // Прежний JavaScript код без изменений
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import requests
 
-url = "https://image.pollinations.ai/models"
+url = "https://text.pollinations.ai/models"
 
 try:
     response = requests.get(url)
